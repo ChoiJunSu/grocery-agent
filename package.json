@@ -1,0 +1,19 @@
+{
+  "name": "grocery-agent",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/core",
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev -w server",
+    "dev:web": "npm run dev -w web",
+    "test": "npm run test -w @grocery/core",
+    "typecheck": "tsc -p packages/core/tsconfig.json && tsc -p server/tsconfig.json && tsc -p web/tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}
