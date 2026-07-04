@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        width: 300px;
+        margin: 0;
+        padding: 16px;
+        font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+        font-size: 13px;
+      }
+      h1 { font-size: 15px; margin: 0 0 12px; }
+      button {
+        width: 100%;
+        padding: 9px;
+        margin-bottom: 8px;
+        border: none;
+        border-radius: 6px;
+        background: #16a34a;
+        color: #fff;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button.secondary { background: #e5e7eb; color: #111; }
+      #status { white-space: pre-line; color: #444; margin-top: 8px; min-height: 40px; }
+      .hint { color: #888; font-size: 11px; margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>🛒 스마트 장보기 에이전트</h1>
+    <button id="sync">가격 · 쿠폰 지금 동기화</button>
+    <button id="check" class="secondary">서버 연결 확인</button>
+    <div id="status"></div>
+    <p class="hint">
+      마트 사이트에 로그인한 탭을 열어둔 상태에서 동기화하세요.
+      비밀번호는 절대 수집하지 않습니다.
+    </p>
+    <script src="popup.js"></script>
+  </body>
+</html>
