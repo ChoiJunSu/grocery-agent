@@ -4,13 +4,23 @@
     <meta charset="utf-8" />
     <style>
       body {
-        width: 300px;
+        width: 320px;
         margin: 0;
         padding: 16px;
         font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
         font-size: 13px;
       }
       h1 { font-size: 15px; margin: 0 0 12px; }
+      label { display: block; font-size: 11px; color: #666; margin-bottom: 4px; }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 7px 9px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        font-size: 12px;
+        margin-bottom: 8px;
+      }
       button {
         width: 100%;
         padding: 9px;
@@ -29,6 +39,11 @@
   </head>
   <body>
     <h1>🛒 스마트 장보기 에이전트</h1>
+
+    <label for="token">사용자 토큰 (웹 UI 상단에서 복사)</label>
+    <input id="token" type="text" placeholder="웹 UI의 토큰을 붙여넣으세요" />
+    <button id="saveToken" class="secondary">토큰 저장</button>
+
     <button id="sync">가격 · 쿠폰 지금 동기화</button>
     <button id="check" class="secondary">서버 연결 확인</button>
     <div id="status"></div>

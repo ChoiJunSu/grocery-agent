@@ -1,4 +1,19 @@
 const statusEl = document.getElementById('status');
+const tokenEl = document.getElementById('token');
+
+chrome.storage.sync.get('userToken').then(({ userToken }) => {
+  if (userToken) tokenEl.value = userToken;
+});
+
+document.getElementById('saveToken').addEventListener('click', async () => {
+  const token = tokenEl.value.trim();
+  if (token.length < 8) {
+    statusEl.textContent = '⚠️ 토큰은 8자 이상이어야 합니다';
+    return;
+  }
+  await chrome.storage.sync.set({ userToken: token });
+  statusEl.textContent = '✅ 토큰 저장됨 — 웹 UI와 같은 계정으로 연결됩니다';
+});
 
 document.getElementById('sync').addEventListener('click', () => {
   statusEl.textContent = '동기화 중...';
@@ -8,7 +23,11 @@ document.getElementById('sync').addEventListener('click', () => {
       return;
     }
     statusEl.textContent = res.results
-      .map((r) => (r.ok ? `✅ ${r.martId}: ${r.offerCount}개 상품` : `⚠️ ${r.martId}: ${r.error}`))
+      .map((r) =>
+        r.ok
+          ? `✅ ${r.martId}: 매핑 ${r.matchedCount}개${r.unmatchedCount ? `, 미매핑 ${r.unmatchedCount}개` : ''}`
+          : `⚠️ ${r.martId}: ${r.error}`,
+      )
       .join('\n');
   });
 });

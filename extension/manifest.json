@@ -2,21 +2,23 @@
   "manifest_version": 3,
   "name": "스마트 장보기 에이전트",
   "description": "로그인된 마트 세션에서 가격/쿠폰을 수집하고, 최적화된 장바구니를 자동으로 담습니다. 비밀번호는 절대 수집하지 않습니다.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "permissions": ["storage", "alarms", "tabs"],
   "host_permissions": [
     "http://localhost:3001/*",
     "https://emart.ssg.com/*",
+    "https://pay.ssg.com/*",
     "https://front.homeplus.co.kr/*",
     "https://mfront.homeplus.co.kr/*",
-    "https://www.coupang.com/*"
+    "https://www.coupang.com/*",
+    "https://cart.coupang.com/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://emart.ssg.com/*"],
+      "matches": ["https://emart.ssg.com/*", "https://pay.ssg.com/*"],
       "js": ["content/common.js", "content/emart.js"],
       "run_at": "document_idle"
     },
@@ -26,7 +28,7 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://www.coupang.com/*"],
+      "matches": ["https://www.coupang.com/*", "https://cart.coupang.com/*"],
       "js": ["content/common.js", "content/coupang.js"],
       "run_at": "document_idle"
     }
