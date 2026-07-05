@@ -11,21 +11,21 @@ export const MOCK_MARTS: Mart[] = [
     name: '이마트 쓱배송',
     shippingFee: 3000,
     freeShippingThreshold: 40000,
-    cartUrl: 'https://emart.ssg.com/',
+    cartUrl: 'https://pay.ssg.com/cart/dmsShpp.ssg',
   },
   {
     id: 'homeplus',
     name: '홈플러스',
     shippingFee: 3000,
     freeShippingThreshold: 30000,
-    cartUrl: 'https://front.homeplus.co.kr/',
+    cartUrl: 'https://front.homeplus.co.kr/cart',
   },
   {
     id: 'coupang',
     name: '쿠팡 로켓프레시',
     shippingFee: 3000,
     freeShippingThreshold: 15000,
-    cartUrl: 'https://www.coupang.com/',
+    cartUrl: 'https://cart.coupang.com/cartView.pang',
   },
 ];
 
