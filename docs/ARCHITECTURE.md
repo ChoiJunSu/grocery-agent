@@ -25,7 +25,15 @@
 
 ### `server` — Fastify API (port 3001)
 
-- **in-memory 단일 사용자 저장소** (MVP 범위). 재시작하면 초기화.
+- **SQLite 다중 사용자 저장소** (`node:sqlite` 내장 모듈, 네이티브 의존성 없음).
+  DB 파일은 `server/data/grocery.db` (gitignore, `GROCERY_DB` env로 경로 변경 가능).
+- **인증**: `/api/health` 외 모든 요청에 `X-User-Token` 헤더 필수(8자 이상).
+  처음 보는 토큰은 자동으로 사용자 등록. 사용자별로 ingest 데이터·플랜·작업 큐가 완전 격리된다.
+  웹 UI가 토큰을 생성해 표시하고, 사용자는 익스텐션 팝업에 한 번 붙여넣어 페어링한다.
+- **상품명 매핑**: 익스텐션은 사이트 상품명(`siteName`)을 그대로 보내고, 서버가
+  `packages/core`의 매처(별칭 테이블 → 바이그램 유사도)로 카탈로그 productId에 매핑한다.
+  같은 상품이 여러 카드로 잡히면 최저가만 채택하고, 매핑 실패 상품은 `unmatched` 테이블에
+  쌓여 웹 UI에 노출된다(별칭 테이블 보강용).
 - 최적화 입력 조립 시 마트 단위로 병합: 익스텐션이 ingest한 마트는 live 데이터,
   나머지는 `packages/core`의 mock. 응답에 `dataSources`로 출처 명시.
 - 장바구니 담기는 **작업 큐 패턴**: 웹 UI가 `/api/execute`로 큐에 넣으면 익스텐션이
@@ -34,22 +42,39 @@
 
 ### `extension` — Chrome Extension MV3
 
-- `content/common.js`: 어댑터 등록 + 메시지 라우팅. 마트별 스크립트는 어댑터 객체
-  (`scrapeOffers / scrapeCoupons / scrapeSlots / addToCart`)만 구현하면 된다.
-- `content/{emart,homeplus,coupang}.js`: 마트별 어댑터. **실제 DOM 셀렉터는 미확정이라
-  `TODO(실사이트 연동)`로 표시했고, 셀렉터 미매칭 시 mock 폴백**으로 사이클이 끊기지 않는다.
+- `content/common.js`: 어댑터 등록 + 메시지 라우팅 + 공용 유틸(후보 셀렉터 순차 시도 `q/qa`,
+  바이그램 상품명 유사도, React 호환 input 값 주입, SPA 렌더링 대기).
+- `content/{emart,homeplus,coupang}.js`: 마트별 어댑터
+  (`scrapeOffers / scrapeCoupons / scrapeSlots / addItem / scrapeCart`).
+  셀렉터는 **후보 배열**로 정의해 사이트 개편 시 한 곳만 고치면 된다.
+- **담기 흐름**: background가 품목별로 검색 URL을 열고 `ADD_ITEM` 전송 → 어댑터가
+  대상 상품과 가장 유사한 카드를 골라 담기 버튼 클릭(수량만큼 반복). 카드에 담기 버튼이
+  없는 마트(쿠팡 등)는 어댑터가 `navigate` 응답으로 상세 페이지 이동을 요청하고,
+  상세에서 수량 설정 후 담는다.
+- **담기 검증**: 전 품목 담기 후 background가 장바구니 페이지(pay.ssg.com,
+  front.homeplus.co.kr/cart, cart.coupang.com)를 열어 `SCRAPE_CART`로 상품명 목록을 읽고,
+  유사도 매칭으로 각 품목의 실제 반영 여부를 확인해 `verified`로 보고한다.
 - `background.js`: 팝업의 동기화 요청 처리(열린 마트 탭 스크랩 → `/api/ingest`),
-  15초 알람으로 담기 작업 폴링 → 마트 탭에 `ADD_TO_CART` 메시지 → 결과 보고.
+  15초 알람으로 담기 작업 폴링. 모든 서버 호출에 저장된 사용자 토큰을 헤더로 첨부.
 - 빌드 스텝 없음. `chrome://extensions`에서 폴더째 로드.
+
+> **셀렉터 확정 상태**: 이 개발 환경에서는 마트 도메인 접근이 네트워크 정책으로 차단되어
+> 셀렉터를 실DOM에 대고 최종 확인하지 못했다. 각 어댑터의 `SELECTORS`는 알려진 구조 기반
+> 후보 배열이며, 실제 브라우저에서 안 맞는 항목은 개발자도구로 확인해 배열 앞에 추가하면 된다.
+> 미매칭 시에도 mock 폴백과 실패 사유 보고로 사이클은 끊기지 않는다.
 
 ### `web` — Vite + React UI (port 5173)
 
 카탈로그에서 품목/수량 선택 → 최적화 결과(마트별 카드, 쿠폰/배송비/슬롯, 절약액) 확인 →
 담기 실행 → 2초 폴링으로 마트별 진행 상태 표시.
 
-## 실사이트 연동 시 남은 작업
+## 구현 완료된 것 / 남은 것
 
-1. 마트별 상품명 ↔ 내부 `productId` 매핑 (검색 API 또는 상품 상세 URL 기반)
-2. 각 어댑터의 실제 DOM 셀렉터 확정 (`TODO(실사이트 연동)` 검색)
-3. 담기 검증: 담기 후 장바구니 페이지에서 실제 반영 여부 확인
-4. 다중 사용자: in-memory store → SQLite/Postgres + 사용자 토큰
+| 항목 | 상태 |
+|---|---|
+| 상품명 ↔ productId 매핑 (별칭 테이블 + 바이그램 유사도, 미매핑 노출) | ✅ 서버에서 자동 수행 |
+| 담기 후 장바구니 페이지 검증 (`verified`) | ✅ background 오케스트레이션 |
+| 다중 사용자 (SQLite + `X-User-Token`, 웹↔익스텐션 토큰 페어링) | ✅ |
+| 어댑터 셀렉터의 실DOM 최종 확인 | ⚠️ 실제 브라우저에서 확인 필요 (후보 배열만 교정하면 됨) |
+| 쿠폰함 상세 파싱(할인율/최소주문금액), 배송 슬롯 캘린더 파싱 | ⚠️ 쿠폰/슬롯 실DOM 확인 후 정교화 |
+| 별칭 테이블(`PRODUCT_ALIASES`) 축적 | 웹 UI의 "매핑 실패" 목록 보면서 지속 보강 |
