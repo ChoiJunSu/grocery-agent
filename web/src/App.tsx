@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Mart, Product } from '@grocery/core';
-import { api, krw, type IngestStatus, type StoredPlan } from './api';
+import { api, getUserToken, krw, type IngestStatus, type StoredPlan } from './api';
 
 type CatalogMart = Pick<Mart, 'id' | 'name' | 'shippingFee' | 'freeShippingThreshold'>;
 
@@ -12,7 +12,9 @@ export default function App() {
   const [plan, setPlan] = useState<StoredPlan | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const pollRef = useRef<number | null>(null);
+  const token = getUserToken();
 
   useEffect(() => {
     api
@@ -89,6 +91,21 @@ export default function App() {
         <p className="sub">이마트 쓱배송 · 홈플러스 · 쿠팡 로켓프레시 — 쿠폰과 배송비까지 계산한 최저가 장바구니 분할</p>
       </header>
 
+      <div className="tokenbar">
+        <span>
+          익스텐션 연결 토큰: <code>{token}</code>
+        </span>
+        <button
+          onClick={() => {
+            navigator.clipboard.writeText(token);
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1500);
+          }}
+        >
+          {copied ? '복사됨!' : '복사'}
+        </button>
+      </div>
+
       {ingest && (
         <div className="sources">
           {ingest.marts.map((m) => (
@@ -97,6 +114,19 @@ export default function App() {
             </span>
           ))}
         </div>
+      )}
+
+      {ingest && ingest.unmatched.length > 0 && (
+        <details className="unmatched-box">
+          <summary>카탈로그 매핑 실패 상품 {ingest.unmatched.length}건 (별칭 테이블 보강 필요)</summary>
+          <ul>
+            {ingest.unmatched.map((u) => (
+              <li key={`${u.martId}-${u.siteName}`}>
+                [{u.martId}] {u.siteName} — {krw(u.price)}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       {error && <div className="error">{error}</div>}
@@ -216,6 +246,7 @@ export default function App() {
                   {plan.actions.map((a) => (
                     <li key={a.id}>
                       {marts.find((m) => m.id === a.martId)?.name ?? a.martId}: {a.status}
+                      {a.status === 'done' && (a.verified ? ' · 🔒 장바구니 검증 통과' : ' · ⚠️ 검증 미통과')}
                       {a.detail ? ` — ${a.detail}` : ''}
                     </li>
                   ))}
