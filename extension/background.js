@@ -22,6 +22,11 @@ const MART_CONFIG = {
     searchUrl: (query) => `https://www.coupang.com/np/search?component=&q=${encodeURIComponent(query)}`,
     cartUrl: 'https://cart.coupang.com/cartView.pang',
   },
+  kurly: {
+    urlPatterns: ['*://www.kurly.com/*', '*://m.kurly.com/*'],
+    searchUrl: (query) => `https://www.kurly.com/search?sword=${encodeURIComponent(query)}`,
+    cartUrl: 'https://www.kurly.com/cart',
+  },
 };
 
 // ---------- 서버 통신 ----------
@@ -34,10 +39,11 @@ async function getToken() {
 async function api(path, options = {}) {
   const token = await getToken();
   if (!token) throw new Error('사용자 토큰 미설정 — 팝업에서 웹 UI의 토큰을 붙여넣으세요');
-  const res = await fetch(`${SERVER}${path}`, {
-    headers: { 'Content-Type': 'application/json', 'X-User-Token': token },
-    ...options,
-  });
+  const headers = { 'X-User-Token': token, ...(options.headers ?? {}) };
+  // 바디 없는 POST에 Content-Type: application/json을 붙이면 Fastify가 400으로 거절한다
+  // (FST_ERR_CTP_EMPTY_JSON_BODY)
+  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+  const res = await fetch(`${SERVER}${path}`, { ...options, headers });
   if (!res.ok) throw new Error(`${path} → HTTP ${res.status}`);
   return res.json();
 }
@@ -106,6 +112,16 @@ async function syncMart(martId) {
   const scraped = await sendToTab(tab.id, { type: 'SCRAPE_ALL' });
   if (!scraped.ok) return { martId, ok: false, error: scraped.error };
 
+  // 상품을 하나도 못 읽었으면 서버에 빈 스냅샷을 올리지 않는다. 올리면 그 마트가
+  // "수집됨(0건)"이 되어 비교에서 조용히 빠진다.
+  if (!scraped.offers || scraped.offers.length === 0) {
+    return {
+      martId,
+      ok: false,
+      error: '수집된 상품 0건 — 검색/카테고리 페이지를 연 탭에서 실행하세요 (셀렉터 미매칭이면 콘솔 경고 확인)',
+    };
+  }
+
   const result = await api('/api/ingest', {
     method: 'POST',
     body: JSON.stringify({
@@ -153,8 +169,7 @@ async function addSingleItem(tabId, martId, item) {
 }
 
 /** 담기 완료 후 장바구니 페이지에서 품목들이 실제로 들어갔는지 확인 */
-async function verifyCart(tabId, martId, items, anyMocked) {
-  if (anyMocked) return { verified: false, note: 'mock 담기 포함 — 실DOM 검증 생략' };
+async function verifyCart(tabId, martId, items) {
   const config = MART_CONFIG[martId];
   const ready = await navigateAndWait(tabId, config.cartUrl);
   if (!ready) return { verified: false, note: '장바구니 페이지 미응답' };
@@ -207,14 +222,12 @@ async function executeAction(action) {
 
   const added = [];
   const failed = [];
-  let anyMocked = false;
 
   for (const item of action.items) {
     try {
       const res = await addSingleItem(tab.id, action.martId, item);
       if (res.ok) {
         added.push(item.name);
-        if (res.mocked) anyMocked = true;
       } else {
         failed.push(`${item.name}(${res.reason ?? res.error ?? '원인 미상'})`);
       }
@@ -223,7 +236,9 @@ async function executeAction(action) {
     }
   }
 
-  const { verified, note } = await verifyCart(tab.id, action.martId, action.items, anyMocked);
+  // 한 건이라도 담기에 실패했으면 실패로 보고한다. 부분 성공을 성공으로 올리면
+  // 웹 UI가 "담김"으로 표시해 사용자가 결제 직전에야 누락을 발견하게 된다.
+  const { verified, note } = await verifyCart(tab.id, action.martId, action.items);
   const status = failed.length === 0 ? 'done' : 'failed';
   const detail = [`담김 ${added.length}/${action.items.length}건`, failed.length ? `실패: ${failed.join(', ')}` : null, note]
     .filter(Boolean)
@@ -233,30 +248,56 @@ async function executeAction(action) {
 
 let processing = false;
 
+// MV3 서비스 워커는 확장 API 호출이 30초간 없으면 크롬이 종료시킨다. 담기 작업은
+// 페이지 로딩 대기(waitTabComplete 최대 20초)와 sleep으로 이뤄져 있는데 setTimeout은
+// 수명을 연장해주지 않으므로, 작업이 도는 동안 주기적으로 확장 API를 호출해 살려둔다.
+// 이게 없으면 워커가 담기 중간에 죽고 작업은 서버에 claimed인 채로 유실된다.
+let keepAliveTimer = null;
+
+function startKeepAlive() {
+  if (keepAliveTimer !== null) return;
+  keepAliveTimer = setInterval(() => {
+    chrome.runtime.getPlatformInfo().catch(() => {});
+  }, 20000);
+}
+
+function stopKeepAlive() {
+  if (keepAliveTimer === null) return;
+  clearInterval(keepAliveTimer);
+  keepAliveTimer = null;
+}
+
 async function processPendingActions() {
   if (processing) return; // 알람 중복 진입 방지
   processing = true;
+  startKeepAlive();
   try {
     let claimed;
     try {
       claimed = await api('/api/actions/claim', { method: 'POST' });
-    } catch {
-      return; // 서버 미기동/토큰 미설정 시 조용히 스킵
+    } catch (e) {
+      // 서버 미기동/토큰 미설정이면 정상 상황이지만, 그 외 실패는 작업이 pending에
+      // 영영 멈춘 것처럼 보이므로 워커 콘솔에는 남긴다
+      console.warn('[장보기] 작업 폴링 실패:', e.message);
+      return;
     }
 
     for (const action of claimed.actions) {
       let result;
       try {
+        console.log(`[장보기] ${action.martId} 담기 시작 — ${action.items.length}품목`);
         result = await executeAction(action);
       } catch (e) {
         result = { status: 'failed', verified: false, detail: String(e) };
       }
+      console.log(`[장보기] ${action.martId} 결과:`, result.status, result.detail ?? '');
       await api('/api/actions/result', {
         method: 'POST',
         body: JSON.stringify({ actionId: action.id, ...result }),
-      }).catch(() => {});
+      }).catch((e) => console.warn('[장보기] 결과 보고 실패:', e.message));
     }
   } finally {
+    stopKeepAlive();
     processing = false;
   }
 }
@@ -276,6 +317,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'CHECK_SERVER') {
     fetch(`${SERVER}/api/health`)
       .then((r) => sendResponse({ ok: r.ok }))
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
+  }
+  if (message.type === 'DIAGNOSE_ACTIVE_TAB') {
+    chrome.tabs
+      .query({ active: true, currentWindow: true })
+      .then(async ([tab]) => {
+        if (!tab) return sendResponse({ ok: false, error: '활성 탭 없음' });
+        const res = await sendToTab(tab.id, { type: 'DIAGNOSE' });
+        if (!res.ok) {
+          sendResponse({
+            ok: false,
+            error: `${res.error} — 지원 마트(이마트/홈플러스/쿠팡/컬리) 페이지인지 확인하세요`,
+          });
+          return;
+        }
+        sendResponse(res);
+      })
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }

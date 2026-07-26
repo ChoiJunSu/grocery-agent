@@ -23,7 +23,7 @@ export interface StoredPlan {
   id: string;
   createdAt: string;
   plan: OptimizePlan;
-  dataSources: Record<string, 'mock' | 'live'>;
+  dataSources: Record<string, 'live' | 'none'>;
   execution: 'idle' | 'queued' | 'running' | 'done' | 'failed';
 }
 
@@ -86,6 +86,18 @@ db.exec(`
     created_at TEXT NOT NULL
   );
 `);
+
+// 기존 DB 호환: 담기 시각 컬럼이 없으면 추가한다
+const actionColumns = db.prepare('PRAGMA table_info(actions)').all() as unknown as { name: string }[];
+if (!actionColumns.some((c) => c.name === 'claimed_at')) {
+  db.exec('ALTER TABLE actions ADD COLUMN claimed_at TEXT');
+}
+
+/**
+ * 익스텐션이 집어간 뒤 이 시간이 지나도록 결과 보고가 없으면 유실로 보고 회수한다.
+ * MV3 서비스 워커는 담기 도중 크롬에 의해 종료될 수 있고, 그러면 결과 보고가 영영 오지 않는다.
+ */
+const STALE_CLAIM_MS = 3 * 60 * 1000;
 
 const now = () => new Date().toISOString();
 
@@ -172,11 +184,18 @@ export const store = {
   },
 
   claimPendingActions(token: string): CartAction[] {
+    // 보고 없이 유실된 작업 회수 (claimed_at이 비어 있으면 컬럼 추가 이전의 작업이므로 즉시 회수)
+    db.prepare(
+      `UPDATE actions SET status = 'pending', claimed_at = NULL
+       WHERE user_token = ? AND status = 'claimed' AND (claimed_at IS NULL OR claimed_at < ?)`,
+    ).run(token, new Date(Date.now() - STALE_CLAIM_MS).toISOString());
+
     const rows = db
       .prepare("SELECT * FROM actions WHERE user_token = ? AND status = 'pending'")
       .all(token) as unknown as ActionRow[];
-    const stmt = db.prepare("UPDATE actions SET status = 'claimed' WHERE id = ?");
-    for (const r of rows) stmt.run(r.id);
+    const claimedAt = now();
+    const stmt = db.prepare("UPDATE actions SET status = 'claimed', claimed_at = ? WHERE id = ?");
+    for (const r of rows) stmt.run(claimedAt, r.id);
     return rows.map((r) => ({ ...rowToAction(r), status: 'claimed' as const }));
   },
 
