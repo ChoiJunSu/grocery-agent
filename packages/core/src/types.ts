@@ -18,7 +18,7 @@ export interface Mart {
   cartUrl: string; // 익스텐션이 장바구니 담기 시 열어야 하는 페이지
 }
 
-/** 특정 마트의 특정 상품 판매 정보 (익스텐션이 스크랩하거나 mock) */
+/** 특정 마트의 특정 상품 판매 정보 (익스텐션이 로그인 세션에서 스크랩) */
 export interface Offer {
   martId: string;
   productId: string;

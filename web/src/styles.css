@@ -30,6 +30,7 @@ header h1 { margin: 0; font-size: 26px; }
 .sources { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
 .badge { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: #e2e8f0; }
 .badge.live { background: #dcfce7; color: #166534; }
+.badge.none { background: #fef3c7; color: #92400e; }
 
 .error {
   background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca;

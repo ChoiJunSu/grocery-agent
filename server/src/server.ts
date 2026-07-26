@@ -2,17 +2,15 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { randomUUID } from 'node:crypto';
 import {
+  MARTS,
   matchProduct,
-  MOCK_COUPONS,
-  MOCK_MARTS,
-  MOCK_OFFERS,
-  MOCK_PRODUCTS,
-  MOCK_SLOTS,
   optimize,
   PRODUCT_ALIASES,
+  PRODUCTS,
   type CartItem,
   type Coupon,
   type DeliverySlot,
+  type Mart,
   type Offer,
   type OptimizeInput,
 } from '@grocery/core';
@@ -41,38 +39,42 @@ app.addHook('onRequest', async (req, reply) => {
 });
 
 /**
- * 최적화 입력 조립: 기본은 mock, 익스텐션이 ingest한 마트는 live 데이터로 덮어쓴다.
+ * 최적화 입력 조립: 익스텐션이 수집한 실데이터만 사용한다.
+ *
+ * 수집 이력이 없는 마트는 가격을 지어내지 않고 비교 대상에서 아예 제외한다.
+ * 없는 데이터를 채워 넣으면 "이 마트가 더 싸다"는 틀린 결론이 나오기 때문이다.
  */
 function buildOptimizeInput(
   token: string,
   items: CartItem[],
 ): {
   input: OptimizeInput;
-  dataSources: Record<string, 'mock' | 'live'>;
+  dataSources: Record<string, 'live' | 'none'>;
+  collectedMarts: Mart[];
 } {
   const offers: Offer[] = [];
   const coupons: Coupon[] = [];
   const slots: DeliverySlot[] = [];
-  const dataSources: Record<string, 'mock' | 'live'> = {};
+  const dataSources: Record<string, 'live' | 'none'> = {};
+  const collectedMarts: Mart[] = [];
 
-  for (const mart of MOCK_MARTS) {
+  for (const mart of MARTS) {
     const live = store.getIngested(token, mart.id);
-    if (live) {
-      offers.push(...live.offers);
-      coupons.push(...live.coupons);
-      slots.push(...live.slots);
-      dataSources[mart.id] = 'live';
-    } else {
-      offers.push(...MOCK_OFFERS.filter((o) => o.martId === mart.id));
-      coupons.push(...MOCK_COUPONS.filter((c) => c.martId === mart.id));
-      slots.push(...MOCK_SLOTS.filter((s) => s.martId === mart.id));
-      dataSources[mart.id] = 'mock';
+    if (!live || live.offers.length === 0) {
+      dataSources[mart.id] = 'none';
+      continue;
     }
+    offers.push(...live.offers);
+    coupons.push(...live.coupons);
+    slots.push(...live.slots);
+    dataSources[mart.id] = 'live';
+    collectedMarts.push(mart);
   }
 
   return {
-    input: { items, products: MOCK_PRODUCTS, marts: MOCK_MARTS, offers, coupons, slots },
+    input: { items, products: PRODUCTS, marts: collectedMarts, offers, coupons, slots },
     dataSources,
+    collectedMarts,
   };
 }
 
@@ -80,8 +82,8 @@ app.get('/api/health', async () => ({ ok: true, now: new Date().toISOString() })
 
 /** 웹 UI가 장보기 목록을 만들 때 쓰는 카탈로그 */
 app.get('/api/catalog', async () => ({
-  products: MOCK_PRODUCTS,
-  marts: MOCK_MARTS.map(({ id, name, shippingFee, freeShippingThreshold }) => ({
+  products: PRODUCTS,
+  marts: MARTS.map(({ id, name, shippingFee, freeShippingThreshold }) => ({
     id,
     name,
     shippingFee,
@@ -102,11 +104,11 @@ app.post<{
   Body: { martId: string; offers?: RawOffer[]; coupons?: Coupon[]; slots?: DeliverySlot[] };
 }>('/api/ingest', async (req, reply) => {
   const { martId, offers = [], coupons = [], slots = [] } = req.body ?? {};
-  if (!martId || !MOCK_MARTS.some((m) => m.id === martId)) {
+  if (!martId || !MARTS.some((m) => m.id === martId)) {
     return reply.code(400).send({ error: `unknown martId: ${martId}` });
   }
 
-  const catalogIds = new Set(MOCK_PRODUCTS.map((p) => p.id));
+  const catalogIds = new Set(PRODUCTS.map((p) => p.id));
   const matched: Offer[] = [];
   const unmatched: { siteName: string; price: number }[] = [];
 
@@ -118,7 +120,7 @@ app.post<{
     }
     const siteName = raw.siteName ?? raw.productId;
     if (!siteName) continue;
-    const match = matchProduct(siteName, MOCK_PRODUCTS, PRODUCT_ALIASES[martId]);
+    const match = matchProduct(siteName, PRODUCTS, PRODUCT_ALIASES[martId]);
     if (match) {
       matched.push({ martId, productId: match.productId, price: raw.price, available: raw.available !== false });
     } else {
@@ -152,12 +154,12 @@ app.post<{
 
 /** 마트별 수집 데이터 현황 (웹 UI 상단 상태 표시용) */
 app.get('/api/ingest/status', async (req) => ({
-  marts: MOCK_MARTS.map((m) => {
+  marts: MARTS.map((m) => {
     const live = store.getIngested(req.userToken, m.id);
     return {
       martId: m.id,
       name: m.name,
-      source: live ? 'live' : 'mock',
+      source: live && live.offers.length > 0 ? 'live' : 'none',
       ingestedAt: live?.ingestedAt ?? null,
       offerCount: live?.offers.length ?? null,
     };
@@ -177,7 +179,14 @@ app.post<{ Body: { items: CartItem[] } }>('/api/optimize', async (req, reply) =>
     }
   }
 
-  const { input, dataSources } = buildOptimizeInput(req.userToken, items);
+  const { input, dataSources, collectedMarts } = buildOptimizeInput(req.userToken, items);
+  if (collectedMarts.length === 0) {
+    return reply.code(409).send({
+      error:
+        '수집된 마트 데이터가 없습니다. 마트에 로그인한 탭을 열고 익스텐션 팝업에서 "가격 · 쿠폰 지금 동기화"를 먼저 실행하세요.',
+      dataSources,
+    });
+  }
   const plan = optimize(input);
   const stored: StoredPlan = {
     id: randomUUID(),
@@ -210,7 +219,7 @@ app.post<{ Body: { planId: string } }>('/api/execute', async (req, reply) => {
     id: randomUUID(),
     planId: stored.id,
     martId: basket.martId,
-    cartUrl: MOCK_MARTS.find((m) => m.id === basket.martId)!.cartUrl,
+    cartUrl: MARTS.find((m) => m.id === basket.martId)!.cartUrl,
     items: basket.lines.map((l) => ({ productId: l.productId, name: l.name, quantity: l.quantity })),
     status: 'pending',
     verified: false,

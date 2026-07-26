@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { optimize, pickBestCoupon } from '../src/optimizer.js';
-import { MOCK_COUPONS, MOCK_MARTS, MOCK_OFFERS, MOCK_PRODUCTS, MOCK_SLOTS } from '../src/mocks.js';
+import { MARTS, PRODUCTS } from '../src/catalog.js';
+import { FIXTURE_COUPONS, FIXTURE_OFFERS, FIXTURE_SLOTS } from './fixtures.js';
 import type { Coupon, Mart, Offer, OptimizeInput, Product } from '../src/types.js';
 
 const martA: Mart = { id: 'a', name: 'A마트', shippingFee: 3000, freeShippingThreshold: 40000, cartUrl: '' };
@@ -132,14 +133,14 @@ describe('optimize — 배송비/쿠폰 상호작용', () => {
 });
 
 describe('optimize — mock 전체 데이터', () => {
-  const allItems = MOCK_PRODUCTS.map((p) => ({ productId: p.id, quantity: 1 }));
+  const allItems = PRODUCTS.map((p) => ({ productId: p.id, quantity: 1 }));
   const full: OptimizeInput = {
     items: allItems,
-    products: MOCK_PRODUCTS,
-    marts: MOCK_MARTS,
-    offers: MOCK_OFFERS,
-    coupons: MOCK_COUPONS,
-    slots: MOCK_SLOTS,
+    products: PRODUCTS,
+    marts: MARTS,
+    offers: FIXTURE_OFFERS,
+    coupons: FIXTURE_COUPONS,
+    slots: FIXTURE_SLOTS,
   };
 
   it('전수 탐색으로 단일 마트 최저 baseline보다 같거나 싼 해를 찾는다', () => {
@@ -175,7 +176,7 @@ describe('optimize — mock 전체 데이터', () => {
       unit: '',
     }));
     const manyOffers: Offer[] = manyProducts.flatMap((p, i) =>
-      MOCK_MARTS.map((m, j) => ({
+      MARTS.map((m, j) => ({
         martId: m.id,
         productId: p.id,
         price: 3000 + i * 100 + j * 50,
@@ -185,10 +186,10 @@ describe('optimize — mock 전체 데이터', () => {
     const plan = optimize({
       items: manyProducts.map((p) => ({ productId: p.id, quantity: 1 })),
       products: manyProducts,
-      marts: MOCK_MARTS,
+      marts: MARTS,
       offers: manyOffers,
-      coupons: MOCK_COUPONS,
-      slots: MOCK_SLOTS,
+      coupons: FIXTURE_COUPONS,
+      slots: FIXTURE_SLOTS,
     });
     expect(plan.strategy).toBe('greedy');
     expect(plan.unassigned).toHaveLength(0);

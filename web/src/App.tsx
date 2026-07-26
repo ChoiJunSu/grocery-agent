@@ -110,7 +110,7 @@ export default function App() {
         <div className="sources">
           {ingest.marts.map((m) => (
             <span key={m.martId} className={`badge ${m.source}`}>
-              {m.name}: {m.source === 'live' ? `실데이터 (${m.offerCount}개 상품)` : 'mock 데이터'}
+              {m.name}: {m.source === 'live' ? `수집됨 (${m.offerCount}개 상품)` : '미수집 — 비교 제외'}
             </span>
           ))}
         </div>

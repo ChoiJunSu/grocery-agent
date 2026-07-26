@@ -17,16 +17,51 @@ export function normalizeName(name: string): string {
     .replace(/[^0-9a-z가-힣]/g, ''); // 공백/기호 제거
 }
 
+/**
+ * 용량 단위를 대표 단위로 환산해 "1000ml"과 "1l"이 서로 다른 문자열로 갈리는 것을 막는다.
+ * 실제로 컬리는 "우유 1000mL", 카탈로그는 "1L"로 적혀 매칭이 0건이었다.
+ */
+export function normalizeUnits(name: string): string {
+  return name.replace(/(\d+(?:\.\d+)?)ml/g, (_, n) => `${Number((Number(n) / 1000).toFixed(3))}l`);
+}
+
+/**
+ * 비교에 쓸 이름 변형들.
+ *
+ * 대괄호는 마트마다 의미가 정반대다 — 이마트는 "[이마트] 우유"처럼 노이즈를 넣지만
+ * 컬리는 "[서울우유] 나 100% 우유"처럼 **브랜드**를 넣는다. 어느 쪽이 맞는지 미리
+ * 알 수 없으므로 두 해석을 모두 만들어 가장 잘 맞는 쪽을 채택한다.
+ */
+function nameVariants(name: string): string[] {
+  const bracketsDropped = normalizeName(name);
+  const bracketsKept = normalizeName(name.replace(/[[\]()]/g, ' '));
+  const all = [bracketsDropped, bracketsKept].flatMap((v) => [v, normalizeUnits(v)]);
+  return [...new Set(all)].filter((v) => v.length > 0);
+}
+
 function bigrams(s: string): Set<string> {
   const set = new Set<string>();
   for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
   return set;
 }
 
-/** Dice coefficient (0~1) */
+/**
+ * Dice coefficient (0~1). 대괄호 해석과 용량 단위 표기가 마트마다 달라
+ * 양쪽 이름의 변형들을 모두 대조해 가장 높은 점수를 채택한다.
+ */
 export function nameSimilarity(a: string, b: string): number {
-  const na = normalizeName(a);
-  const nb = normalizeName(b);
+  let best = 0;
+  for (const va of nameVariants(a)) {
+    for (const vb of nameVariants(b)) {
+      const score = similarityOf(va, vb);
+      if (score > best) best = score;
+    }
+  }
+  return best;
+}
+
+/** 정규화가 끝난 두 문자열의 유사도 */
+function similarityOf(na: string, nb: string): number {
   if (na.length === 0 || nb.length === 0) return 0;
   if (na === nb) return 1;
   const ba = bigrams(na);
@@ -57,9 +92,11 @@ export function matchProduct(
   products: Product[],
   aliases?: Record<string, string>,
 ): MatchResult | null {
-  const normalized = normalizeName(siteName);
-  if (aliases && aliases[normalized]) {
-    return { productId: aliases[normalized], score: 1 };
+  if (aliases) {
+    // 별칭 테이블에 어떤 표기로 넣었든 잡히도록 변형을 모두 조회한다
+    for (const variant of nameVariants(siteName)) {
+      if (aliases[variant]) return { productId: aliases[variant], score: 1 };
+    }
   }
   let best: MatchResult | null = null;
   for (const p of products) {
@@ -84,5 +121,9 @@ export const PRODUCT_ALIASES: Record<string, Record<string, string>> = {
   coupang: {
     [normalizeName('서울우유 나100% 우유, 1L, 1개')]: 'milk-1l',
     [normalizeName('곰곰 무항생제 신선한 대란 30구')]: 'eggs-30',
+  },
+  // 2026-07-26 www.kurly.com/search 실DOM에서 관측한 표기
+  kurly: {
+    [normalizeName('서울우유 나 100% 우유 1000mL')]: 'milk-1l',
   },
 };

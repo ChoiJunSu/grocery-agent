@@ -16,7 +16,7 @@ export interface StoredPlan {
   id: string;
   createdAt: string;
   plan: OptimizePlan;
-  dataSources: Record<string, 'mock' | 'live'>;
+  dataSources: Record<string, 'live' | 'none'>;
   execution: 'idle' | 'queued' | 'running' | 'done' | 'failed';
   actions?: {
     id: string;
@@ -31,7 +31,7 @@ export interface IngestStatus {
   marts: {
     martId: string;
     name: string;
-    source: 'mock' | 'live';
+    source: 'live' | 'none';
     ingestedAt: string | null;
     offerCount: number | null;
   }[];
