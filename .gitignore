@@ -4,3 +4,5 @@ dist/
 .env
 .DS_Store
 server/data/
+# 이 저장소와 무관한 로컬 도구 DB (flights.sqlite 등)
+data/
