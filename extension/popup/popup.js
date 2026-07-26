@@ -32,6 +32,36 @@ document.getElementById('sync').addEventListener('click', () => {
   });
 });
 
+// 셀렉터 진단: 지금 열려 있는 마트 탭에서 후보 셀렉터별 매칭 수를 보고한다.
+// 이마트·쿠팡은 자동화 브라우저를 차단해 개발 환경에서 DOM을 볼 수 없으므로,
+// 로그인된 사용자 브라우저가 유일한 확인 통로다. 결과는 클립보드로 복사된다.
+document.getElementById('diagnose').addEventListener('click', () => {
+  statusEl.textContent = '현재 탭 진단 중...';
+  chrome.runtime.sendMessage({ type: 'DIAGNOSE_ACTIVE_TAB' }, async (res) => {
+    if (!res?.ok) {
+      statusEl.textContent = `진단 실패: ${res?.error ?? '응답 없음'}\n(마트 사이트 탭을 활성화한 뒤 다시 누르세요)`;
+      return;
+    }
+    const lines = [`# ${res.martId} 셀렉터 진단`, res.url, `title: ${res.title}`, ''];
+    const summary = [];
+    for (const [key, cands] of Object.entries(res.report)) {
+      const hit = cands.find((c) => c.n > 0);
+      summary.push(`${hit ? '✅' : '❌'} ${key}${hit ? ` ${hit.n}개` : ''}`);
+      lines.push(`[${key}]`);
+      for (const c of cands) lines.push(`  ${c.n < 0 ? 'ERR' : `${c.n}×`} ${c.sel}`);
+    }
+    if (res.cardSample) lines.push('', '[첫 카드 HTML]', res.cardSample);
+    const full = lines.join('\n');
+    try {
+      await navigator.clipboard.writeText(full);
+      statusEl.textContent = `${summary.join('\n')}\n\n📋 전체 리포트가 클립보드에 복사됨`;
+    } catch {
+      console.log(full);
+      statusEl.textContent = `${summary.join('\n')}\n\n(복사 실패 — 팝업 콘솔에 출력됨)`;
+    }
+  });
+});
+
 document.getElementById('check').addEventListener('click', () => {
   statusEl.textContent = '확인 중...';
   chrome.runtime.sendMessage({ type: 'CHECK_SERVER' }, (res) => {

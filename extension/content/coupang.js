@@ -2,7 +2,7 @@
 //
 // 쿠팡 검색 카드에는 담기 버튼이 없어 상품 상세 페이지를 경유한다:
 // 검색 → 최적 카드의 링크 반환(navigate) → 상세에서 수량 설정 + 담기.
-// 실사이트 최종 확인 필요 — 카드가 하나도 없으면 mock 폴백.
+// 어느 셀렉터 후보도 안 맞으면 실패로 보고한다 — 임의의 값으로 대신하지 않는다.
 
 (() => {
   const { q, qa, parsePrice, pickBestCard, setInputValue, sleep, waitFor } = window.__ga;
@@ -25,29 +25,19 @@
     cartLineName: ['.product-name', 'a[class*="productName"]', '[class*="name"]'],
   };
 
-  const MOCK_FALLBACK = {
-    offers: [
-      { siteName: '델몬트 바나나 1kg 내외', price: 3780, available: true },
-      { siteName: '그릭데이 그릭요거트 플레인 4입', price: 5290, available: true },
-      { siteName: '곰곰 무항생제 신선한 대란 30구', price: 8790, available: true },
-    ],
-    coupons: [
-      { id: 'coupang-2000', name: '로켓프레시 2,000원 할인', type: 'fixed', value: 2000, minOrder: 25000 },
-    ],
-    slots: [{ date: '2026-07-05', timeRange: '새벽배송 (07:00 전)', available: true }],
-  };
 
   const isDetailPage = () => location.pathname.includes('/vp/products/');
   const isCartPage = () => location.hostname === 'cart.coupang.com';
 
   window.__registerMartAdapter({
     martId: 'coupang',
+    selectors: SELECTORS, // DIAGNOSE 메시지가 실페이지에서 후보별 매칭 수를 보고하는 데 사용
 
     async scrapeOffers() {
       const cards = qa(document, SELECTORS.productCard);
       if (cards.length === 0) {
-        console.warn('[장보기 에이전트] coupang: 상품 카드 셀렉터 미매칭 → mock 폴백');
-        return MOCK_FALLBACK.offers;
+        console.warn('[장보기 에이전트] coupang: 상품 카드 셀렉터 미매칭 — 수집 0건 (SELECTORS.productCard 확인 필요)');
+        return [];
       }
       return cards
         .map((card) => {
@@ -61,7 +51,7 @@
 
     async scrapeCoupons() {
       const rows = qa(document, SELECTORS.couponRow);
-      if (rows.length === 0) return MOCK_FALLBACK.coupons;
+      if (rows.length === 0) return [];
       return rows.map((row, i) => ({
         id: `coupang-scraped-${i}`,
         name: q(row, SELECTORS.couponName)?.textContent?.trim() ?? '이름 미상 쿠폰',
@@ -72,8 +62,9 @@
     },
 
     async scrapeSlots() {
-      // 로켓프레시는 시간대 선택이 아닌 새벽/당일 고정 — mock 유지
-      return MOCK_FALLBACK.slots;
+      // 배송 슬롯은 점포/배송지 설정에 종속적이라 아직 파싱하지 않는다.
+      // 추정 슬롯을 내보내면 "언제 오는지"를 틀리게 알려주게 되므로 빈 배열을 반환한다.
+      return [];
     },
 
     async addItem(item) {
@@ -95,8 +86,10 @@
         return found.length > 0 ? found : null;
       });
       if (!cards) {
-        console.warn(`[장보기 에이전트] coupang: 검색 카드 미발견 → mock 담기: ${item.name} x${item.quantity}`);
-        return { ok: true, mocked: true };
+        return {
+          ok: false,
+          reason: '검색 결과 카드 미발견 (로그인/봇차단 페이지이거나 SELECTORS.productCard 미매칭)',
+        };
       }
 
       // 로켓프레시 상품 우선, 없으면 전체에서 매칭

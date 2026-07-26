@@ -7,7 +7,7 @@
 //     scrapeOffers(): Promise<{siteName, price, available}[]>,  // 페이지의 상품 카드
 //     scrapeCoupons(): Promise<Coupon[]>,
 //     scrapeSlots(): Promise<DeliverySlot[]>,
-//     addItem(item): Promise<{ok, mocked?, reason?}>,  // 검색 결과 페이지에서 해당 상품 1건 담기
+//     addItem(item): Promise<{ok, reason?, navigate?}>, // 검색 결과 페이지에서 해당 상품 1건 담기
 //     scrapeCart(): Promise<{names: string[]} | null>, // 장바구니 페이지의 상품명 목록 (검증용)
 //   }
 //
@@ -144,6 +144,36 @@
         case 'SCRAPE_CART': {
           const cart = await adapter.scrapeCart();
           return { ok: true, martId: adapter.martId, cart };
+        }
+        case 'DIAGNOSE': {
+          // 지금 열린 실제 페이지에서 각 셀렉터 후보가 몇 개나 잡히는지 보고한다.
+          // 마트가 봇 차단으로 개발 환경에서 열리지 않으므로, 사용자의 로그인된
+          // 브라우저가 대신 DOM을 알려주는 통로다.
+          if (!adapter.selectors) return { ok: false, error: `${adapter.martId} 어댑터가 selectors를 노출하지 않음` };
+          const report = {};
+          for (const [key, candidates] of Object.entries(adapter.selectors)) {
+            report[key] = candidates.map((sel) => {
+              let n = -1;
+              try {
+                n = document.querySelectorAll(sel).length;
+              } catch {
+                n = -1; // 이 브라우저가 지원하지 않는 문법
+              }
+              return { sel, n };
+            });
+          }
+          // 첫 카드의 HTML 일부 — 어느 후보도 안 맞을 때 올바른 셀렉터를 찾는 단서
+          let cardSample = null;
+          const cards = qa(document, adapter.selectors.productCard ?? []);
+          if (cards.length > 0) cardSample = cards[0].outerHTML.slice(0, 1800);
+          return {
+            ok: true,
+            martId: adapter.martId,
+            url: location.href,
+            title: document.title,
+            report,
+            cardSample,
+          };
         }
         default:
           return { ok: false, error: `unknown message: ${message.type}` };

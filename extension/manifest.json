@@ -11,7 +11,9 @@
     "https://front.homeplus.co.kr/*",
     "https://mfront.homeplus.co.kr/*",
     "https://www.coupang.com/*",
-    "https://cart.coupang.com/*"
+    "https://cart.coupang.com/*",
+    "https://www.kurly.com/*",
+    "https://m.kurly.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -30,6 +32,11 @@
     {
       "matches": ["https://www.coupang.com/*", "https://cart.coupang.com/*"],
       "js": ["content/common.js", "content/coupang.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.kurly.com/*", "https://m.kurly.com/*"],
+      "js": ["content/common.js", "content/kurly.js"],
       "run_at": "document_idle"
     }
   ],

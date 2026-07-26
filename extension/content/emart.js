@@ -1,8 +1,9 @@
 // 이마트 쓱배송(emart.ssg.com) + SSG 장바구니(pay.ssg.com) 어댑터.
 //
-// 셀렉터는 후보 배열을 순서대로 시도한다. 샌드박스에서 실사이트 접근이 차단되어
-// 최종 확인은 실제 브라우저에서 필요하다 — 미매칭 시 콘솔에 경고를 남기고,
-// 상품 카드가 하나도 없으면 mock으로 폴백해 사이클이 끊기지 않게 한다.
+// 셀렉터는 후보 배열을 순서대로 시도한다. 어느 후보도 안 맞으면 실패로 보고한다 —
+// 임의의 값으로 대신하지 않는다. 없는 데이터를 지어내면 최적화 결과가 조용히
+// 틀리고, 담기지도 않은 상품이 "담김"으로 뜨기 때문이다.
+// 셀렉터가 안 맞으면 SELECTORS의 해당 배열 맨 앞에 올바른 값을 추가하면 된다.
 
 (() => {
   const { q, qa, parsePrice, pickBestCard, setInputValue, sleep, waitFor } = window.__ga;
@@ -28,29 +29,18 @@
     cartLineName: ['.cart_prod_tx .tx_ko', '.cart_info_tx a', '[class*="prod_name"]'],
   };
 
-  const MOCK_FALLBACK = {
-    offers: [
-      { siteName: '서울우유 나 100% 우유 1L', price: 2980, available: true },
-      { siteName: '[이마트] 무항생제 특란 30입', price: 8980, available: true },
-      { siteName: '이마트 햅쌀 10kg', price: 32900, available: true },
-    ],
-    coupons: [
-      { id: 'emart-10pct', name: '쓱배송 10% (최대 5천원)', type: 'percent', value: 10, minOrder: 50000, maxDiscount: 5000 },
-    ],
-    slots: [{ date: '2026-07-05', timeRange: '14:00~17:00', available: true }],
-  };
-
   const isDetailPage = () => /itemView|\/item\//.test(location.href);
   const isCartPage = () => location.hostname === 'pay.ssg.com';
 
   window.__registerMartAdapter({
     martId: 'emart',
+    selectors: SELECTORS, // DIAGNOSE 메시지가 실페이지에서 후보별 매칭 수를 보고하는 데 사용
 
     async scrapeOffers() {
       const cards = qa(document, SELECTORS.productCard);
       if (cards.length === 0) {
-        console.warn('[장보기 에이전트] emart: 상품 카드 셀렉터 미매칭 → mock 폴백');
-        return MOCK_FALLBACK.offers;
+        console.warn('[장보기 에이전트] emart: 상품 카드 셀렉터 미매칭 — 수집 0건 (SELECTORS.productCard 확인 필요)');
+        return [];
       }
       return cards
         .map((card) => {
@@ -63,8 +53,9 @@
     },
 
     async scrapeCoupons() {
+      // 쿠폰함(https://emart.ssg.com/myssg/coupon 계열)에서만 잡힌다. 다른 페이지에선 0건이 정상.
       const rows = qa(document, SELECTORS.couponRow);
-      if (rows.length === 0) return MOCK_FALLBACK.coupons;
+      if (rows.length === 0) return [];
       // 할인율/조건 파싱은 쿠폰함 실DOM 확인 후 정교화 — 이름만이라도 수집
       return rows.map((row, i) => ({
         id: `emart-scraped-${i}`,
@@ -76,8 +67,9 @@
     },
 
     async scrapeSlots() {
-      // 쓱배송 예약 캘린더는 배송지 설정에 종속 — 실DOM 확인 전까지 mock
-      return MOCK_FALLBACK.slots;
+      // 쓱배송 예약 캘린더는 배송지 설정에 종속적이라 아직 파싱하지 않는다.
+      // 추정 슬롯을 내보내면 "언제 오는지"를 틀리게 알려주게 되므로 빈 배열을 반환한다.
+      return [];
     },
 
     async addItem(item) {
@@ -99,8 +91,10 @@
         return found.length > 0 ? found : null;
       });
       if (!cards) {
-        console.warn(`[장보기 에이전트] emart: 검색 카드 미발견 → mock 담기: ${item.name} x${item.quantity}`);
-        return { ok: true, mocked: true };
+        return {
+          ok: false,
+          reason: '검색 결과 카드 미발견 (로그인/봇차단 페이지이거나 SELECTORS.productCard 미매칭)',
+        };
       }
 
       const match = pickBestCard(cards, (c) => q(c, SELECTORS.productName)?.textContent, item.name);
