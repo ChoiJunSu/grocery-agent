@@ -1,0 +1,15 @@
+{
+  "name": "seoul-tennis-board",
+  "private": true,
+  "version": "0.1.0",
+  "description": "서울 공공 테니스장 예약 현황 한눈에 보기",
+  "type": "module",
+  "scripts": {
+    "collect": "node src/collect.js",
+    "diagnose": "node src/diagnose.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

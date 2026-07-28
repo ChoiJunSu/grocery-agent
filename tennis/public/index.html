@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>서울 공공 테니스장 현황</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🎾</text></svg>" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar__title">
+        <h1>서울 공공 테니스장 현황</h1>
+        <p class="meta" id="meta">불러오는 중…</p>
+      </div>
+      <div class="legend">
+        <span><i class="sw sw--available"></i>예약 가능</span>
+        <span><i class="sw sw--closed"></i>마감</span>
+        <span><i class="sw sw--unknown"></i>확인 필요</span>
+        <span><i class="sw sw--none"></i>정보 없음</span>
+      </div>
+    </header>
+
+    <section class="filters" id="filters">
+      <input type="search" id="q" placeholder="코트·장소 검색 (예: 보라매, 서울숲)" />
+      <select id="district"><option value="">전체 자치구</option></select>
+      <select id="weekday">
+        <option value="">전체 요일</option>
+        <option value="weekend">주말만</option>
+        <option value="weekday">평일만</option>
+      </select>
+      <select id="fee">
+        <option value="">유료·무료 전체</option>
+        <option value="free">무료만</option>
+        <option value="paid">유료만</option>
+      </select>
+      <label class="check"><input type="checkbox" id="onlyOpen" checked /> 빈자리 있는 코트만</label>
+      <span class="spacer"></span>
+      <span class="count" id="count"></span>
+    </section>
+
+    <main>
+      <div id="empty" class="empty" hidden></div>
+      <div class="gridwrap" id="gridwrap" hidden>
+        <table class="grid" id="grid"></table>
+      </div>
+
+      <section class="upcoming" id="upcoming" hidden>
+        <h2>곧 접수 오픈</h2>
+        <ul id="upcomingList"></ul>
+      </section>
+
+      <details class="errors" id="errors" hidden>
+        <summary></summary>
+        <ul id="errorList"></ul>
+      </details>
+    </main>
+
+    <aside class="panel" id="panel" hidden>
+      <button class="panel__close" id="panelClose" aria-label="닫기">✕</button>
+      <h2 id="panelTitle"></h2>
+      <p class="meta" id="panelMeta"></p>
+      <ul class="slots" id="panelSlots"></ul>
+      <a class="btn" id="panelLink" target="_blank" rel="noopener">예약 페이지 열기 ↗</a>
+    </aside>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
